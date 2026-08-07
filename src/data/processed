@@ -1,1 +1,15 @@
+# Processed Data
 
+This folder stores cleaned and preprocessed datasets generated during
+the NewsBot Intelligence System 2.0 pipeline.
+
+Examples include:
+
+- Tokenized datasets
+- Cleaned news articles
+- Feature-engineered datasets
+- Preprocessed CSV files
+
+The completed notebook processes data in memory and does not save a
+processed dataset to disk. This folder is included to match the required
+repository structure.
