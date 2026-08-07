@@ -26,7 +26,7 @@ class AdvancedNewsClassifier:
         self.ngram_range = ngram_range
         self.top_k_alternatives = top_k_alternatives
 
-        # Feature Extractor
+        # 1. Feature Extractor
         self.vectorizer = TfidfVectorizer(
             max_features=self.max_features,
             ngram_range=self.ngram_range,
@@ -34,17 +34,18 @@ class AdvancedNewsClassifier:
             sublinear_tf=True,
         )
 
-        # Base classifier
+        # 2. Base Classifier with Class Weighting (Handles Imbalance)
+        # Using SGDClassifier (Linear SVM/LogReg) for scalable training on 200k+ rows
         base_model = SGDClassifier(
             loss="log_loss",
             penalty="l2",
             alpha=1e-5,
-            class_weight="balanced",
+            class_weight="balanced",  # Critical for imbalanced news categories
             random_state=42,
             max_iter=1000,
         )
 
-        # Probability calibration
+        # 3. Probability Calibration (Ensures confidence scores are true probabilities)
         self.model = CalibratedClassifierCV(
             estimator=base_model,
             cv=2,
@@ -59,19 +60,25 @@ class AdvancedNewsClassifier:
             return ""
 
         text = text.lower()
-        text = re.sub(r"https?://\S+|www\.\S+", "", text)
-        text = re.sub(r"[^a-zA-Z\s]", "", text)
+        text = re.sub(r"https?://\S+|www\.\S+", "", text)  # Remove URLs
+        text = re.sub(
+            r"[^a-zA-Z\s]", "", text
+        )  # Remove non-alphanumeric characters
         return re.sub(r"\s+", " ", text).strip()
 
-    def train(self, X_train: List[str], y_train: List[str]) -> Dict[str, Any]:
-        """Train the vectorizer and probability-calibrated classifier."""
+    def train(
+        self,
+        X_train: List[str],
+        y_train: List[str],
+    ) -> Dict[str, Any]:
+        """Trains the vectorizer and probability-calibrated ensemble model."""
         print("⚙️ Preprocessing training data...")
         cleaned_X = [self._preprocess_text(text) for text in X_train]
 
         print("📐 Vectorizing text features...")
         X_vec = self.vectorizer.fit_transform(cleaned_X)
 
-        print("🏋️ Training Calibrated SGD Model...")
+        print("🏋️ Training Calibrated SGD Model (Class Weight: Balanced)...")
         self.model.fit(X_vec, y_train)
 
         self.classes_ = self.model.classes_
@@ -83,76 +90,80 @@ class AdvancedNewsClassifier:
             "status": "trained",
             "num_classes": len(self.classes_),
         }
+            def predict_with_confidence(
+        self,
+        texts: List[str],
+    ) -> List[Dict[str, Any]]:
+        """Predicts news categories with calibrated confidence scores and
+        alternative category suggestions."""
 
-    def predict_with_confidence(self, article_text: str) -> Dict[str, Any]:
-        """Predict the primary category and confidence score."""
         if not self.is_trained:
             raise RuntimeError(
-                "Model has not been trained yet. Call `.train()` first."
+                "Classifier has not been trained. Call train() first."
             )
 
-        cleaned = self._preprocess_text(article_text)
-        vec = self.vectorizer.transform([cleaned])
+        # Preprocess incoming texts
+        cleaned = [self._preprocess_text(text) for text in texts]
+        X_vec = self.vectorizer.transform(cleaned)
 
-        probs = self.model.predict_proba(vec)[0]
-        top_indices = np.argsort(probs)[::-1]
+        # Predict probabilities
+        probabilities = self.model.predict_proba(X_vec)
+        predictions = self.model.predict(X_vec)
 
-        primary_idx = top_indices[0]
-        primary_category = self.classes_[primary_idx]
-        primary_confidence = float(probs[primary_idx])
+        results = []
 
-        alternatives = []
+        for i in range(len(texts)):
+            probs = probabilities[i]
 
-        for idx in top_indices[1:self.top_k_alternatives + 1]:
-            alternatives.append(
+            # Sort probabilities from highest to lowest
+            ranked = np.argsort(probs)[::-1]
+
+            prediction = predictions[i]
+            confidence = float(probs[ranked[0]])
+
+            alternatives = []
+            for idx in ranked[1 : self.top_k_alternatives + 1]:
+                alternatives.append(
+                    {
+                        "category": self.classes_[idx],
+                        "confidence": round(float(probs[idx]), 4),
+                    }
+                )
+
+            results.append(
                 {
-                    "category": str(self.classes_[idx]),
-                    "confidence": float(round(probs[idx], 4)),
+                    "prediction": prediction,
+                    "confidence": round(confidence, 4),
+                    "alternatives": alternatives,
                 }
             )
 
-        return {
-            "primary_category": primary_category,
-            "confidence": round(primary_confidence, 4),
-            "alternative_categories": alternatives,
-        }
-
-    def explain_prediction(
-        self,
-        article_text: str,
-        top_n_words: int = 5,
+        return results
+            def explain_prediction(
+        self, article_text: str, top_n_words: int = 5
     ) -> Dict[str, Any]:
-        """Provide TF-IDF feature importance explanation."""
+        """Provides feature-importance explanations based on TF-IDF term weights."""
         if not self.is_trained:
-            raise RuntimeError(
-                "Model must be trained to explain predictions."
-            )
+            raise RuntimeError("Model must be trained to explain predictions.")
 
         cleaned = self._preprocess_text(article_text)
         vec = self.vectorizer.transform([cleaned])
 
-        feature_names = np.array(
-            self.vectorizer.get_feature_names_out()
-        )
-
+        # Extract non-zero TF-IDF terms from the text
+        feature_names = np.array(self.vectorizer.get_feature_names_out())
         non_zero_indices = vec.nonzero()[1]
         scores = vec.data
 
+        # Pair words with their TF-IDF scores and sort
         word_score_pairs = list(
             zip(feature_names[non_zero_indices], scores)
         )
-
         sorted_pairs = sorted(
-            word_score_pairs,
-            key=lambda x: x[1],
-            reverse=True,
+            word_score_pairs, key=lambda x: x[1], reverse=True
         )
 
         top_influential_terms = [
-            {
-                "term": term,
-                "tfidf_weight": round(float(score), 4),
-            }
+            {"term": term, "tfidf_weight": round(float(score), 4)}
             for term, score in sorted_pairs[:top_n_words]
         ]
 
@@ -166,6 +177,6 @@ class AdvancedNewsClassifier:
                 f"The article was classified as "
                 f"'{prediction_info['primary_category']}' "
                 f"due to the presence and high importance of key phrases: "
-                f"{', '.join(item['term'] for item in top_influential_terms)}."
+                f"{', '.join([item['term'] for item in top_influential_terms])}."
             ),
         }
