@@ -1,1 +1,13 @@
+# Models
 
+This folder stores trained machine learning and NLP models used by the
+NewsBot Intelligence System 2.0.
+
+Examples:
+- LDA topic model
+- TF-IDF vectorizer
+- Logistic Regression classifier
+- Sentiment analysis model
+
+The completed notebook does not save trained models, so this folder is
+included to match the required project structure.
