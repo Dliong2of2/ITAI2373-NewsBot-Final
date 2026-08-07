@@ -1,35 +1,26 @@
 """
-Data validation utilities for NewsBot 2.0.
+Data validation utilities for NewsBot Intelligence System 2.0.
+
+The current notebook performs data validation within the individual
+processing modules before training and inference rather than through
+a standalone DataValidator class.
+
+This module is included to match the required repository structure.
 """
 
-from typing import List
 
+class DataValidator:
+    """Basic data validation helper."""
 
-def validate_text(text):
-    """Validate a single text input."""
+    @staticmethod
+    def validate_text(text):
+        """Return True if the input is a non-empty string."""
+        return isinstance(text, str) and len(text.strip()) > 0
 
-    if text is None:
-        raise ValueError("Input text cannot be None.")
+    @staticmethod
+    def validate_dataset(df, required_columns=None):
+        """Check that a DataFrame contains the required columns."""
+        if required_columns is None:
+            return True
 
-    if not isinstance(text, str):
-        raise TypeError("Input must be a string.")
-
-    if not text.strip():
-        raise ValueError("Input text cannot be empty.")
-
-    return True
-
-
-def validate_documents(documents: List[str]):
-    """Validate a collection of documents."""
-
-    if not isinstance(documents, list):
-        raise TypeError("Documents must be provided as a list.")
-
-    if len(documents) == 0:
-        raise ValueError("Document list cannot be empty.")
-
-    for doc in documents:
-        validate_text(doc)
-
-    return True
+        return all(column in df.columns for column in required_columns)
