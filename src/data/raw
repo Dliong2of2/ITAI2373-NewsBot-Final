@@ -1,1 +1,12 @@
+# Raw Data
 
+This folder stores the original, unmodified datasets used by the
+NewsBot Intelligence System 2.0.
+
+The completed notebook loads the News Category Dataset directly from
+KaggleHub rather than storing a local copy in this repository.
+
+Dataset:
+- rmisra/news-category-dataset (Kaggle)
+
+This folder is included to match the required repository structure.
